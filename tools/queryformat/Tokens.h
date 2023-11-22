@@ -18,7 +18,7 @@
 #define DOUT  std::cout
 using std::endl;
 
-#define USE_TAGNAME_IDS 0         // Just code sample how one could use symbol tables
+#define USE_TAGNAME_IDS     0     // Just a code exsample how one could use symbol tables
 #define STORE_TAGNAME_UPPER 1     // Store parsed tagnames uppercased
 
 ///////////////////////////////////////////////////////////////////
@@ -61,7 +61,6 @@ namespace zypp::qf
   inline std::ostream & operator<<( std::ostream & str, const TokenType & obj )
   { return str << "Token[" << static_cast<unsigned>(obj) << "]"; }
 
-
   ///////////////////////////////////////////////////////////////////
   /// Base class for Tokens stored in \ref Format.
   struct Token
@@ -84,8 +83,7 @@ namespace zypp::qf
   /// A sequence of Tokens returned from parsing a format string.
   struct Format
   {
-    using TokenPtr = std::shared_ptr<Token>;
-
+    using TokenPtr = std::shared_ptr<Token>;  // unique_ptr preferred, but parser does not let me...
     Format()
     {}
 

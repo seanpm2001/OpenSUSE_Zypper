@@ -1,4 +1,5 @@
 #include <iostream>
+#include <unordered_map>
 
 #include "Parser.h"
 
@@ -14,23 +15,89 @@ namespace zypp::qf
   template <class ItemT>
   using AttrRenderer=std::function<void(const ItemT &,std::ostream &)>;
 
+#define TAG MOUT << __PRETTY_FUNCTION__ << endl
+
+  template <class T>
+  void OUTS( T && t ) {
+    MOUT << __PRETTY_FUNCTION__ << endl;
+  }
+
   namespace
   {
-    struct DummyDataGetter
+    //////////////////////////////////////////////////////////////////
+
+    struct TokenData
     {
-      template <class ItemT>
-      std::string_view operator()( const Tag & tag_r, ItemT && item_r ) const
-      { return tag_r.name; }
+      TokenData() {}
+      virtual ~TokenData() {}
+
+      virtual bool empty() const
+      { return true; }
+
+      virtual std::size_t size() const
+      { return 0; }
+
+      virtual std::string_view get() const
+      { return "(none)"; }
     };
 
     template <class ItemT>
-    struct DataGetter
+    struct TokenGetter : public TokenData
     {
-      std::string_view operator()( const Tag & tag_r, ItemT && item_r ) const
-      { return tag_r.name; }
+      virtual void load( const ItemT & item_r )
+      {}
     };
 
+    //////////////////////////////////////////////////////////////////
+
+    template <class ItemT>
+    struct DataGetterBase
+    {
+      using TokenGetterT = TokenGetter<ItemT>;
+      using TokenGetterPtrT = std::shared_ptr<TokenGetterT>;
+    };
+
+    //////////////////////////////////////////////////////////////////
+
+    template <class ItemT>
+    struct DummyTokenGetter : public TokenGetter<ItemT>
+    {
+      void load( const ItemT & item_r ) override
+      {}
+    };
+
+    template <class ItemT>
+    struct DummyDataGetter : public DataGetterBase<ItemT>
+    {
+      using TokenGetterT = typename DataGetterBase<ItemT>::TokenGetterT;
+      using TokenGetterPtrT = typename DataGetterBase<ItemT>::TokenGetterPtrT;
+
+      TokenGetterPtrT operator()( const Tag & tag_r ) const
+      { return TokenGetterPtrT( new TokenGetterT() ); }
+    };
+
+    //////////////////////////////////////////////////////////////////
+
+    void dotest()
+    {
+    }
+
 #if 0
+
+    std::map<std::string_view, auto> {
+      { "ARCH",             PoolItem::arch },
+      { "EDITION",          PoolItem::edition },
+      { "NAME",             PoolItem::name },
+      { "RELEASE",          PoolItem::edition },
+      { "REQUIRES",         PoolItem::requires },
+      { "REQUIRESNAME",     PoolItem::requires },
+      { "REQUIRESOP",       PoolItem::requires },
+      { "REQUIRESEDITION",  PoolItem::requires },
+      { "VERSION",          PoolItem::edition },
+    };
+
+
+
     // DataT getter( item_r )
     // "NAME" -> DataGetter<DataT>
     ARCH
@@ -54,19 +121,23 @@ namespace zypp::qf
     };
 
 
+
 #endif
   } // namespace
 
-  template <class ItemT, class DataGetterT=DummyDataGetter>
+  template <class ItemT, class DataGetterT=DummyDataGetter<ItemT>>
   struct Renderer
   {
+    using TokenGetterT = typename DataGetterT::TokenGetterT;
+    using TokenGetterPtrT = typename DataGetterT::TokenGetterPtrT;
+
     Renderer( Format && format_r )
     : _format { std::move(format_r) }
-    {}
+    { compile(); }
 
     Renderer( std::string_view qf_r )
     : _format { qf::parse( qf_r ) }
-    {}
+    { compile(); }
 
     void operator()( const ItemT & item_r ) const
     { operator()( item_r, DOUT ); }
@@ -104,7 +175,7 @@ namespace zypp::qf
     // TokenType::Tag
     void render( const Tag & tag_r, const ItemT & item_r, std::ostream & str, unsigned idx_r ) const
     {
-      std::string_view val{ _dataGetter( tag_r, item_r ) };
+      std::string_view val{ _cache.at( tag_r.name )->get() };
       if ( tag_r.fieldw  ) {
         const char * fieldw { tag_r.fieldw->c_str() };  // parser asserts at least one digit
         bool ladjust = ( *fieldw == '-' );
@@ -135,8 +206,45 @@ namespace zypp::qf
     { ; }
 
   private:
+
+    void compile()
+    { compile( _format ); }
+
+    void compile( const Format & format_r )
+    {
+      for ( const auto & tok : format_r.tokens ) {
+        switch ( tok->_type )
+        {
+          case TokenType::String:
+            // NOP
+            break;
+          case TokenType::Tag: {
+            const Tag & tag { static_cast<const Tag &>(*tok) };
+            compile( tag.name );
+          } break;
+          case TokenType::Array: {
+            const Array & array { static_cast<const Array &>(*tok) };
+            compile( array.format );
+          } break;
+          case TokenType::Conditional: {
+            const Conditional & conditional { static_cast<const Conditional &>(*tok) };
+            compile( conditional.name );
+            compile( conditional.Tformat );
+            if ( conditional.Fformat )
+              compile( *conditional.Fformat );
+          } break;
+        }
+      }
+    }
+
+    void compile( std::string_view name_r )
+    {
+      MOUT << name_r << endl;
+    }
+
+  private:
     Format _format;
-    DataGetterT _dataGetter;
+    std::unordered_map<std::string_view, TokenGetterPtrT> _cache;
   };
 
 } // namespace zypp::qf
@@ -152,7 +260,7 @@ try {
     return true;
   }();
 
-  unsigned max = 10;
+  unsigned max = 3;
   for ( const auto & el : zypp::ResPool::instance() ) {
     if ( not max-- ) break;
     render(el);
@@ -168,6 +276,8 @@ int main( int argc, const char ** argv )
   using namespace zypp;
   using namespace std::literals;
   ++argv,--argc;
+
+  qf::dotest();
 
   if ( argc ) {
     if ( *argv == "p"sv ) {
